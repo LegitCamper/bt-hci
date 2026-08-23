@@ -229,17 +229,6 @@ impl<'de> FromHciBytes<'de> for &'de AdvPhyOptions {
 }
 
 param! {
-    #[derive(Default)]
-    enum IsoDataPathDirection {
-        /// Host to Controller
-        #[default]
-        Input = 0x00,
-        /// Controller to Host (e.g. a sink device's received frames).
-        Output = 0x01,
-    }
-}
-
-param! {
     struct ScanningPhy {
         active_scan: bool,
         scan_interval: Duration<625>,
@@ -408,7 +397,7 @@ param! {
 
 param!(struct SyncHandle(u16));
 
-param!(struct BigHandle(u16));
+param!(struct BigHandle(u8));
 
 param! {
     #[derive(Default)]
@@ -1366,6 +1355,7 @@ param! {
     /// Per-CIS configuration for `LE Set CIG Parameters Test`.
     struct CisConfigTest {
         cis_id: CisId,
+        nse: u8,
         max_sdu_c_to_p: u16,
         max_sdu_p_to_c: u16,
         max_pdu_c_to_p: u16,

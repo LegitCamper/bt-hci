@@ -4,8 +4,6 @@ use core::mem;
 
 use crate::param::{
     AddrKind, AdvChannelMap, AdvEventProps, AdvFilterPolicy, AdvHandle, AdvKind, AdvPhyOptions, AdvSet, AllPhys,
-    BdAddr, ChannelMap, ConnHandle, ConnIntervalGroup, CteKind, CteMask, Duration, DurationU8, ExtDuration,
-    FilterDuplicates, InitiatingPhy, IsoDataPathDirection, LeDataRelatedAddrChangeReasons, LeEventMask, LeFeatureMask,
     BdAddr, BigHandle, BroadcastCode, ChannelMap, CigId, CisConfig, CisConfigTest, CisConnConfig, CodecId, ConnHandle,
     ConnIntervalGroup, CteKind, CteMask, DataPathDirection, DataPathId, Duration, DurationU8, EncryptionMode,
     ExtDuration, FilterDuplicates, Framing, InitiatingPhy, LeDataRelatedAddrChangeReasons, LeEventMask, LeFeatureMask,
@@ -14,7 +12,7 @@ use crate::param::{
     PhyOptions, PhyParams, PrivacyMode, RemoteConnectionParamsRejectReason, ScanningFilterPolicy, ScanningPhy,
     SpacingTypes, SwitchingSamplingRates, SyncHandle,
 };
-use crate::{cmd, WriteHci};
+use crate::{cmd, FromHciBytes, FromHciBytesError, ReadHci, ReadHciError, WriteHci};
 
 cmd! {
     /// LE Set Event Mask command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-8d6890a5-79b9-ba8a-2079-4efa3128263c)
@@ -1183,165 +1181,6 @@ cmd! {
 }
 
 cmd! {
-    /// LE Set CIG Parameters command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html) (§7.8.97).
-    ///
-    /// The real command carries a `CIS_Count`-length array of per-CIS records; this only defines a
-    /// fixed 2-CIS layout (`Params` here is a fixed struct, not a variable-length array).
-    LeSetCigParameters(LE, 0x0062) {
-        LeSetCigParametersParams {
-            sdu_interval_c_to_p: [u8; 3],
-            sdu_interval_p_to_c: [u8; 3],
-            worst_case_sca: u8,
-            packing: u8,
-            framing: u8,
-            max_transport_latency_c_to_p: u16,
-            max_transport_latency_p_to_c: u16,
-            cis_count: u8,
-            cis_id_0: u8,
-            max_sdu_c_to_p_0: u16,
-            max_sdu_p_to_c_0: u16,
-            phy_c_to_p_0: u8,
-            phy_p_to_c_0: u8,
-            rtn_c_to_p_0: u8,
-            rtn_p_to_c_0: u8,
-            cis_id_1: u8,
-            max_sdu_c_to_p_1: u16,
-            max_sdu_p_to_c_1: u16,
-            phy_c_to_p_1: u8,
-            phy_p_to_c_1: u8,
-            rtn_c_to_p_1: u8,
-            rtn_p_to_c_1: u8,
-        }
-        LeSetCigParametersReturn {
-            num_handles: u8,
-            connection_handle_0: ConnHandle,
-            connection_handle_1: ConnHandle,
-        }
-        Handle = cig_id: u8;
-    }
-}
-
-cmd! {
-    /// LE Set CIG Parameters Test command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html) (§7.8.98).
-    ///
-    /// Like [`LeSetCigParameters`] but with explicit low-level scheduling parameters
-    /// (`FT`/`ISO_Interval`/`NSE`/`Max_PDU`/`BN`) instead of letting the controller derive them -
-    /// Nordic's SDC docs (`sdc_hci_cmd_vs_cig_reserved_time_set`) recommend this as the workaround
-    /// when `LeSetCigParameters` rejects otherwise-valid parameters with "Unsupported Feature or
-    /// Parameter Value". Flattened to exactly 2 CIS, see [`LeSetCigParameters`].
-    LeSetCigParametersTest(LE, 0x0063) {
-        LeSetCigParametersTestParams {
-            sdu_interval_c_to_p: [u8; 3],
-            sdu_interval_p_to_c: [u8; 3],
-            ft_c_to_p: u8,
-            ft_p_to_c: u8,
-            iso_interval: u16,
-            worst_case_sca: u8,
-            packing: u8,
-            framing: u8,
-            cis_count: u8,
-            cis_id_0: u8,
-            nse_0: u8,
-            max_sdu_c_to_p_0: u16,
-            max_sdu_p_to_c_0: u16,
-            max_pdu_c_to_p_0: u16,
-            max_pdu_p_to_c_0: u16,
-            phy_c_to_p_0: u8,
-            phy_p_to_c_0: u8,
-            bn_c_to_p_0: u8,
-            bn_p_to_c_0: u8,
-            cis_id_1: u8,
-            nse_1: u8,
-            max_sdu_c_to_p_1: u16,
-            max_sdu_p_to_c_1: u16,
-            max_pdu_c_to_p_1: u16,
-            max_pdu_p_to_c_1: u16,
-            phy_c_to_p_1: u8,
-            phy_p_to_c_1: u8,
-            bn_c_to_p_1: u8,
-            bn_p_to_c_1: u8,
-        }
-        LeSetCigParametersTestReturn {
-            num_handles: u8,
-            connection_handle_0: ConnHandle,
-            connection_handle_1: ConnHandle,
-        }
-        Handle = cig_id: u8;
-    }
-}
-
-cmd! {
-    /// LE Create CIS command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html) (§7.8.99).
-    ///
-    /// Completion is per-CIS, via `LE CIS Established` events, not this command's own (immediate)
-    /// Command Status - hence no `Return`. Flattened to exactly 2 CIS, see [`LeSetCigParameters`].
-    LeCreateCis(LE, 0x0064) {
-        LeCreateCisParams {
-            num_cis: u8,
-            cis_connection_handle_0: ConnHandle,
-            acl_connection_handle_0: ConnHandle,
-            cis_connection_handle_1: ConnHandle,
-            acl_connection_handle_1: ConnHandle,
-        }
-    }
-}
-
-cmd! {
-    /// LE Remove CIG command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html) (§7.8.100).
-    LeRemoveCig(LE, 0x0065) {
-        Params = u8;
-        Return = u8;
-        Handle = u8;
-    }
-}
-
-cmd! {
-    /// LE Accept CIS Request command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-e7bb8a8f-45bd-2308-1e4d-0d0a92cb0473)
-    LeAcceptCisRequest(LE, 0x0066) {
-        Params = ConnHandle;
-    }
-}
-
-cmd! {
-    /// LE Reject CIS Request command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-9426926e-b73a-2f7d-a9cc-24c3a2d6d3e1)
-    LeRejectCisRequest(LE, 0x0067) {
-        LeRejectCisRequestParams {
-            reason: u8,
-        }
-        Return = ConnHandle;
-        Handle = cis_handle: ConnHandle;
-    }
-}
-
-cmd! {
-    /// LE Setup ISO Data Path command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-9b3823f9-b840-3e7d-7a3a-2e9a3c6cf1e1)
-    LeSetupIsoDataPath(LE, 0x006e) {
-        LeSetupIsoDataPathParams<'a> {
-            data_path_direction: IsoDataPathDirection,
-            data_path_id: u8,
-            coding_format: u8,
-            company_id: u16,
-            vendor_specific_codec_id: u16,
-            controller_delay: [u8; 3],
-            codec_configuration: &'a [u8],
-        }
-        Return = ConnHandle;
-        Handle = connection_handle: ConnHandle;
-    }
-}
-
-cmd! {
-    /// LE Remove ISO Data Path command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-9b3823f9-b840-3e7d-7a3a-2e9a3c6cf1e2)
-    LeRemoveIsoDataPath(LE, 0x006f) {
-        LeRemoveIsoDataPathParams {
-            data_path_direction: IsoDataPathDirection,
-        }
-        Return = ConnHandle;
-        Handle = connection_handle: ConnHandle;
-    }
-}
-
-cmd! {
     /// LE Set Host Feature command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-873282cd-6e49-e9aa-cf6f-02fb4c0ea924)
     LeSetHostFeature(LE, 0x0074) {
         LeSetHostFeatureParams {
@@ -1634,11 +1473,7 @@ cmd! {
             framing: Framing,
             cis_configs: &'a [CisConfig],
         }
-        LeSetCigParametersReturn {
-            cig_id: CigId,
-            num_cis: u8,
-            cis_handles: [ConnHandle; 31],
-        }
+        Return = LeSetCigParametersReturn;
     }
 }
 
@@ -1657,11 +1492,85 @@ cmd! {
             framing: Framing,
             cis_configs: &'a [CisConfigTest],
         }
-        LeSetCigParametersTestReturn {
-            cig_id: CigId,
-            num_cis: u8,
-            cis_handles: [ConnHandle; 31],
+        Return = LeSetCigParametersTestReturn;
+    }
+}
+
+/// Return parameters shared by `LE Set CIG Parameters` and its test variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct LeSetCigParametersReturn {
+    /// CIG identifier supplied in the command.
+    pub cig_id: CigId,
+    /// Number of valid entries at the start of [`Self::cis_handles`].
+    pub num_cis: u8,
+    /// Controller-assigned CIS connection handles.
+    pub cis_handles: [ConnHandle; 31],
+}
+
+/// Return parameters for `LE Set CIG Parameters Test`.
+pub type LeSetCigParametersTestReturn = LeSetCigParametersReturn;
+
+impl<'de> FromHciBytes<'de> for LeSetCigParametersReturn {
+    fn from_hci_bytes(data: &'de [u8]) -> Result<(Self, &'de [u8]), FromHciBytesError> {
+        let (cig_id, data) = CigId::from_hci_bytes(data)?;
+        let (num_cis, mut data) = u8::from_hci_bytes(data)?;
+        if num_cis > 31 {
+            return Err(FromHciBytesError::InvalidValue);
         }
+
+        let mut cis_handles = [ConnHandle::new(0); 31];
+        for handle in &mut cis_handles[..usize::from(num_cis)] {
+            (*handle, data) = ConnHandle::from_hci_bytes(data)?;
+        }
+
+        Ok((
+            Self {
+                cig_id,
+                num_cis,
+                cis_handles,
+            },
+            data,
+        ))
+    }
+}
+
+impl<'de> ReadHci<'de> for LeSetCigParametersReturn {
+    const MAX_LEN: usize = 2 + 31 * core::mem::size_of::<ConnHandle>();
+
+    fn read_hci<R: embedded_io::Read>(mut reader: R, buf: &'de mut [u8]) -> Result<Self, ReadHciError<R::Error>> {
+        if buf.len() < 2 {
+            return Err(ReadHciError::BufferTooSmall);
+        }
+        reader.read_exact(&mut buf[..2])?;
+        let len = 2 + usize::from(buf[1]) * core::mem::size_of::<ConnHandle>();
+        if len > Self::MAX_LEN {
+            return Err(ReadHciError::InvalidValue);
+        }
+        if buf.len() < len {
+            return Err(ReadHciError::BufferTooSmall);
+        }
+        reader.read_exact(&mut buf[2..len])?;
+        Self::from_hci_bytes_complete(&buf[..len]).map_err(Into::into)
+    }
+
+    async fn read_hci_async<R: embedded_io_async::Read>(
+        mut reader: R,
+        buf: &'de mut [u8],
+    ) -> Result<Self, ReadHciError<R::Error>> {
+        if buf.len() < 2 {
+            return Err(ReadHciError::BufferTooSmall);
+        }
+        reader.read_exact(&mut buf[..2]).await?;
+        let len = 2 + usize::from(buf[1]) * core::mem::size_of::<ConnHandle>();
+        if len > Self::MAX_LEN {
+            return Err(ReadHciError::InvalidValue);
+        }
+        if buf.len() < len {
+            return Err(ReadHciError::BufferTooSmall);
+        }
+        reader.read_exact(&mut buf[2..len]).await?;
+        Self::from_hci_bytes_complete(&buf[..len]).map_err(Into::into)
     }
 }
 
@@ -1669,7 +1578,6 @@ cmd! {
     /// LE Create CIS command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-4c126319-a7b1-6765-ab23-04777e78599f)
     LeCreateCis(LE, 0x0064) {
         LeCreateCisParams<'a> {
-            cig_id: CigId,
             cis_configs: &'a [CisConnConfig],
         }
     }
@@ -1707,7 +1615,7 @@ cmd! {
     /// LE Create BIG command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-b085cd32-0c2b-9b20-acfa-c825ee69820f)
     LeCreateBig(LE, 0x0068) {
         LeCreateBigParams {
-            big_handle: u8,
+            big_handle: BigHandle,
             adv_handle: AdvHandle,
             num_bis: u8,
             sdu_interval: ExtDuration<1>,
@@ -1735,7 +1643,7 @@ impl<'a> LeCreateBigTest<'a> {
     /// Create a new instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        big_handle: u8,
+        big_handle: BigHandle,
         adv_handle: AdvHandle,
         num_bis: u8,
         sdu_interval: ExtDuration<1>,
@@ -1780,7 +1688,7 @@ impl<'a> LeCreateBigTest<'a> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LeCreateBigTestParams<'a> {
     /// BIG handle.
-    pub big_handle: u8,
+    pub big_handle: BigHandle,
     /// Advertising handle.
     pub adv_handle: AdvHandle,
     /// Number of BIS.
@@ -1874,7 +1782,7 @@ cmd! {
     /// LE Terminate BIG command [📖](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-aa21e86e-aeb9-35a3-dbf4-15d48fc30491)
     LeTerminateBig(LE, 0x006a) {
         LeTerminateBigParams {
-            big_handle: u8,
+            big_handle: BigHandle,
             reason: u8,
         }
     }
@@ -1890,8 +1798,13 @@ cmd! {
 
 impl<'a> LeBigCreateSync<'a> {
     /// Create a new instance.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the constructor mirrors the fixed HCI command fields"
+    )]
     pub fn new(
-        big_sync_handle: BigHandle,
+        big_handle: BigHandle,
+        sync_handle: SyncHandle,
         encryption: EncryptionMode,
         broadcast_code: BroadcastCode,
         mse: u8,
@@ -1900,7 +1813,8 @@ impl<'a> LeBigCreateSync<'a> {
         bis: &'a [u8],
     ) -> Self {
         Self(LeBigCreateSyncParams {
-            big_sync_handle,
+            big_handle,
+            sync_handle,
             encryption,
             broadcast_code,
             mse,
@@ -1915,8 +1829,10 @@ impl<'a> LeBigCreateSync<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LeBigCreateSyncParams<'a> {
-    /// BIG sync handle.
-    pub big_sync_handle: BigHandle,
+    /// Host-assigned BIG handle.
+    pub big_handle: BigHandle,
+    /// Periodic advertising sync handle.
+    pub sync_handle: SyncHandle,
     /// Encryption mode.
     pub encryption: EncryptionMode,
     /// Broadcast code.
@@ -1934,12 +1850,13 @@ pub struct LeBigCreateSyncParams<'a> {
 impl WriteHci for LeBigCreateSyncParams<'_> {
     #[inline(always)]
     fn size(&self) -> usize {
-        2 + 1 + 16 + 1 + 2 + 1 + self.bis.len()
+        1 + 2 + 1 + 16 + 1 + 2 + 1 + self.bis.len()
     }
 
     #[inline(always)]
     fn write_hci<W: embedded_io::Write>(&self, mut writer: W) -> Result<(), W::Error> {
-        self.big_sync_handle.write_hci(&mut writer)?;
+        self.big_handle.write_hci(&mut writer)?;
+        self.sync_handle.write_hci(&mut writer)?;
         self.encryption.write_hci(&mut writer)?;
         self.broadcast_code.write_hci(&mut writer)?;
         self.mse.write_hci(&mut writer)?;
@@ -1950,7 +1867,8 @@ impl WriteHci for LeBigCreateSyncParams<'_> {
 
     #[inline(always)]
     async fn write_hci_async<W: embedded_io_async::Write>(&self, mut writer: W) -> Result<(), W::Error> {
-        self.big_sync_handle.write_hci_async(&mut writer).await?;
+        self.big_handle.write_hci_async(&mut writer).await?;
+        self.sync_handle.write_hci_async(&mut writer).await?;
         self.encryption.write_hci_async(&mut writer).await?;
         self.broadcast_code.write_hci_async(&mut writer).await?;
         self.mse.write_hci_async(&mut writer).await?;
@@ -2215,6 +2133,110 @@ impl WriteHci for LeTransmitterTestV3Params<'_> {
             .write_hci_async(&mut writer)
             .await?;
         writer.write_all(self.switching_pattern).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::param::CisId;
+
+    #[test]
+    fn set_cig_parameters_test_serializes_nse_before_sdu_sizes() {
+        let phy = PhyMask::new().set_le_1m_phy(true);
+        let cis_configs = [CisConfigTest {
+            cis_id: CisId::new(2),
+            nse: 1,
+            max_sdu_c_to_p: 100,
+            max_sdu_p_to_c: 0,
+            max_pdu_c_to_p: 100,
+            max_pdu_p_to_c: 0,
+            phy_c_to_p: phy,
+            phy_p_to_c: phy,
+            bn_c_to_p: 1,
+            bn_p_to_c: 0,
+        }];
+        let command = LeSetCigParametersTest::new(
+            CigId::new(1),
+            ExtDuration::from_u32(10_000),
+            ExtDuration::from_u32(10_000),
+            1,
+            1,
+            8,
+            0,
+            Packing::Sequential,
+            Framing::Unframed,
+            &cis_configs,
+        );
+        let mut encoded = [0u8; 32];
+        command.write_hci(encoded.as_mut_slice()).unwrap();
+
+        assert_eq!(
+            &encoded,
+            &[
+                0x63, 0x20, 29, // opcode and parameter length
+                1,  // CIG_ID
+                0x10, 0x27, 0, // SDU interval C-to-P
+                0x10, 0x27, 0, // SDU interval P-to-C
+                1, 1, 8, 0, 0, 0, 0, 1, // FT, ISO interval, SCA, packing, framing, count
+                2, 1, // CIS_ID, NSE
+                100, 0, 0, 0, 100, 0, 0, 0, // SDU/PDU sizes
+                1, 1, 1, 0, // PHYs and burst numbers
+            ]
+        );
+    }
+
+    #[test]
+    fn set_cig_parameters_return_parses_only_reported_handles() {
+        let returned = LeSetCigParametersTestReturn::from_hci_bytes_complete(&[1, 2, 0x40, 0, 0x41, 0]).unwrap();
+
+        assert_eq!(
+            (
+                returned.num_cis,
+                returned.cis_handles[0].raw(),
+                returned.cis_handles[1].raw()
+            ),
+            (2, 0x40, 0x41)
+        );
+    }
+
+    #[test]
+    fn create_cis_serializes_count_before_handle_pairs() {
+        let cis_configs = [
+            CisConnConfig {
+                cis_handle: ConnHandle::new(0x40),
+                acl_handle: ConnHandle::new(5),
+            },
+            CisConnConfig {
+                cis_handle: ConnHandle::new(0x41),
+                acl_handle: ConnHandle::new(5),
+            },
+        ];
+        let command = LeCreateCis::new(&cis_configs);
+        let mut encoded = [0u8; 12];
+        command.write_hci(encoded.as_mut_slice()).unwrap();
+
+        assert_eq!(&encoded, &[0x64, 0x20, 9, 2, 0x40, 0, 5, 0, 0x41, 0, 5, 0]);
+    }
+
+    #[test]
+    fn big_create_sync_serializes_big_and_periodic_sync_handles_separately() {
+        let command = LeBigCreateSync::new(
+            BigHandle(7),
+            SyncHandle(0x1234),
+            EncryptionMode::Unencrypted,
+            BroadcastCode::new([0; 16]),
+            2,
+            100,
+            2,
+            &[1, 2],
+        );
+        let mut encoded = [0u8; 29];
+        command.write_hci(encoded.as_mut_slice()).unwrap();
+
+        assert_eq!(&encoded[..3], &[0x6b, 0x20, 26]);
+        assert_eq!(&encoded[3..7], &[7, 0x34, 0x12, 0]);
+        assert_eq!(&encoded[23..], &[2, 100, 0, 2, 1, 2]);
     }
 }
 
