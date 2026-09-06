@@ -19,7 +19,7 @@ use crate::cmd::{Cmd, CmdReturnBuf};
 use crate::event::{CommandComplete, CommandCompleteWithStatus, CommandStatus, EventKind};
 use crate::param::{RemainingBytes, Status};
 use crate::transport::Transport;
-use crate::{cmd, data, ControllerToHostPacket, FixedSizeValue, FromHciBytes};
+use crate::{cmd, data, ControllerToHostPacket, FromHciBytes};
 
 pub mod blocking;
 
@@ -263,7 +263,10 @@ impl<T, C, const SLOTS: usize> ControllerCmdSync<C> for ExternalController<T, SL
 where
     T: Transport,
     C: cmd::SyncCmd,
-    C::Return: FixedSizeValue,
+    // No `C::Return: FixedSizeValue` bound: `exec` only ever parses the return parameters via
+    // `FromHciBytes`, which `SyncCmd::Return` already guarantees. Requiring a fixed-size wire
+    // layout here would exclude the variable-length returns (`LE Set CIG Parameters` and its
+    // Test variant return Num_CIS handles, Core 6 Vol 4 Part E §7.8.97).
     T::Error: From<ReadHciError<Infallible>>,
 {
     async fn exec(&self, cmd: &C) -> Result<C::Return, cmd::Error<Self::Error>> {
