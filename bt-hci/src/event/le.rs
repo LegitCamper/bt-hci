@@ -15,6 +15,35 @@ pub trait LeEventParams<'a>: FromHciBytes<'a> {
     const SUBEVENT_CODE: u8;
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn big_sync_established_parses_one_octet_big_handle_and_bis_handles() {
+        let bytes = [
+            0x00, // Status
+            0x07, // BIG_Handle
+            0x01, 0x02, 0x03, // Transport_Latency_BIG
+            0x04, // NSE
+            0x05, // BN
+            0x06, // PTO
+            0x07, // IRC
+            0x64, 0x00, // Max_PDU
+            0x08, 0x00, // ISO_Interval
+            0x02, // Num_BIS
+            0x10, 0x00, 0x11, 0x00, // Connection handles
+        ];
+        let event = LeBigSyncEstablished::from_hci_bytes_complete(&bytes).unwrap();
+
+        assert_eq!(event.big_handle.into_inner(), 7);
+        assert_eq!(event.transport_latency_big.as_micros(), 0x03_02_01);
+        assert_eq!(event.bis_handles.len(), 2);
+        assert_eq!(event.bis_handles[0].handle().unwrap().raw(), 0x10);
+        assert_eq!(event.bis_handles[1].handle().unwrap().raw(), 0x11);
+    }
+}
+
 macro_rules! le_events {
     (
         $(
