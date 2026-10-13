@@ -1391,6 +1391,9 @@ param! {
     /// Per-CIS configuration for `LE Set CIG Parameters Test`.
     struct CisConfigTest {
         cis_id: CisId,
+        // NSE[i] sits between CIS_ID[i] and Max_SDU_C_To_P[i]: Core 6 Vol 4 Part E §7.8.98.
+        // Omitting it shifts every later field by one byte.
+        nse: u8,
         max_sdu_c_to_p: u16,
         max_sdu_p_to_c: u16,
         max_pdu_c_to_p: u16,
